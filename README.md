@@ -2,6 +2,8 @@
 
 A Clojure library that demonstrates de-bouncing a microswitch being read via the dvlopt.linux.gpio library.
 
+https://stronganchortech.com/responding-to-gpio-input-events-in-clojure-on-a-rasp-pi-4/
+
 ## License
 
 Copyright © 2020 Aaron Decker
