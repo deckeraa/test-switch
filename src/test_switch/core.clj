@@ -14,7 +14,10 @@
         (println "Event: " event)
           ))))
 
-(defn create-watcher-chan []
+(defn create-watcher-chan
+  "Listens for events on pin 4, debounces them, and puts them onto a chan.
+  Returns a vector; the first element is the channel, the second is an atom that can be set to true to shut donw this listener."
+  []
   (let [gpio-chan (chan)
         off-switch (atom false)
         device  (gpio/device 0)
@@ -24,12 +27,11 @@
                      ::gpio/direction :input
                      ::gpio/edge-detection :rising}})
         last-event-timestamp (atom 0)
-        debounce-wait-time-ns 500000
+        debounce-wait-time-ns (* 1 1000 1000)
         ]
     (thread (while (not @off-switch)
               (if-some [event (gpio/event watcher 1000)]
                 (do
-                  (println "Event: " event)
                   (swap! last-event-timestamp
                          (fn [timestamp]
                            (if (> (:dvlopt.linux.gpio/nano-timestamp event)
@@ -39,10 +41,20 @@
                                (:dvlopt.linux.gpio/nano-timestamp event))
                              timestamp)
                            ))
-                  (println "@last-event-timestamp is now " @last-event-timestamp)
-                  )))
+                   )))
             (println "Closing watcher")
             (gpio/close watcher)
             (gpio/close device)
+            (close! gpio-chan)
             (println "Closed everything allocated."))
     [gpio-chan off-switch]))
+
+(defn event-printer
+  "A sample listener that pulls events from a channel and prints them out."
+  [gpio-chan]
+  (thread (while (if-some [event (<!! gpio-chan)]
+                   (do
+                     (println "Event: " event)
+                     true)
+                   false))
+          (println "Exiting event-printer")))
