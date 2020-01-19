@@ -16,7 +16,7 @@
 
 (defn create-watcher-chan
   "Listens for events on pin 4, debounces them, and puts them onto a chan.
-  Returns a vector; the first element is the channel, the second is an atom that can be set to true to shut donw this listener."
+  Returns a vector; the first element is the channel, the second is an atom that can be set to true to shut down this listener."
   []
   (let [gpio-chan (chan)
         off-switch (atom false)
