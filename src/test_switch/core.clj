@@ -65,6 +65,7 @@
   Returns a vector; the first element is the channel, the second is an atom that can be set to true to shut down this listener."
   []
   (let [gpio-chan (chan)
+        gpio-multi-chan (mult gpio-chan)
         off-switch (atom false)
         device  (gpio/device 0)
         watcher (gpio/watcher
@@ -74,7 +75,7 @@
                      }})
         buff    (gpio/buffer watcher)
         last-event-timestamp (atom 0)
-        debounce-wait-time-ns (* 1 1000 1000)
+        debounce-wait-time-ns (* 2 1000 1000)
         ]
     (thread (while (not @off-switch)
               (if-some [event (gpio/event watcher 1000)]
@@ -94,9 +95,43 @@
             (gpio/close device)
             (close! gpio-chan)
             (println "Closed everything allocated."))
-    {:gpio-chan gpio-chan
+    {:gpio-multi-chan gpio-multi-chan
      :watcher watcher
      :buffer buff
      :off-switch off-switch}))
 
-; state of the line can be read via (gpio/poll (:watcher foo) (:buffer foo) :switch)
+                                        ; state of the line can be read via (gpio/poll (:watcher foo) (:buffer foo) :switch)
+
+(defn event-printer-multi-chan
+  "A sample listener that pulls events from a channel and prints them out."
+  [gpio-multi-chan]
+  (let [my-chan (chan)]
+    (tap gpio-multi-chan my-chan)
+    (thread (while (if-some [event (<!! my-chan)]
+                     (do
+                       (println "Event: " event)
+                       true)
+                     false))
+            (println "Exiting event-printer"))))
+
+(defn create-logical-inputs-status-atom
+  "Returns an atom which represents the logical status of board inputs and creates a thread
+  that subscribes to an event multi-channel (intended to be a debounced signal) and updates
+  the atom as board events come in."
+  [gpio-multi-chan watcher buff]
+  (let [inputs-status-atom (atom {:switch (gpio/poll watcher buff :switch)})
+        my-chan (chan)]
+    (tap gpio-multi-chan my-chan)
+    (thread (while (if-some [event (<!! my-chan)]
+                     (do
+                       (when (= :switch (:dvlopt.linux.gpio/tag event))
+                         (swap! inputs-status-atom
+                                (fn [x] (assoc x
+                                               :switch
+                                               (if (= :rising (:dvlopt.linux.gpio/edge event))
+                                                 true
+                                                 false)))))
+                       true)
+                     false))
+            (println "Exiting create-logical-inputs-status-atom"))
+    inputs-status-atom))
