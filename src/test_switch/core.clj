@@ -25,7 +25,8 @@
                  device
                  {4 {::gpio/tag :switch
                      ::gpio/direction :input
-                     ::gpio/edge-detection :rising}})
+                     ::gpio/edge-detection :rising
+                     }})
         last-event-timestamp (atom 0)
         debounce-wait-time-ns (* 1 1000 1000)
         ]
@@ -58,3 +59,44 @@
                      true)
                    false))
           (println "Exiting event-printer")))
+
+(defn create-watcher-chan-both-directions
+  "Listens for events on pin 4, debounces them, and puts them onto a chan.
+  Returns a vector; the first element is the channel, the second is an atom that can be set to true to shut down this listener."
+  []
+  (let [gpio-chan (chan)
+        off-switch (atom false)
+        device  (gpio/device 0)
+        watcher (gpio/watcher
+                 device
+                 {4 {::gpio/tag :switch
+                     ::gpio/direction :input
+                     }})
+        buff    (gpio/buffer watcher)
+        last-event-timestamp (atom 0)
+        debounce-wait-time-ns (* 1 1000 1000)
+        ]
+    (thread (while (not @off-switch)
+              (if-some [event (gpio/event watcher 1000)]
+                (do
+                  (swap! last-event-timestamp
+                         (fn [timestamp]
+                           (if (> (:dvlopt.linux.gpio/nano-timestamp event)
+                                  (+ timestamp debounce-wait-time-ns))
+                             (do
+                               (put! gpio-chan event)
+                               (:dvlopt.linux.gpio/nano-timestamp event))
+                             timestamp)
+                           ))
+                   )))
+            (println "Closing watcher")
+            (gpio/close watcher)
+            (gpio/close device)
+            (close! gpio-chan)
+            (println "Closed everything allocated."))
+    {:gpio-chan gpio-chan
+     :watcher watcher
+     :buffer buff
+     :off-switch off-switch}))
+
+; state of the line can be read via (gpio/poll (:watcher foo) (:buffer foo) :switch)
